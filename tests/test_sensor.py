@@ -18,6 +18,7 @@ from custom_components.bhyve.sensor import (
     SENSOR_TYPES_SPRINKLER,
     BHyveSensor,
     BHyveSensorEntityDescription,
+    BHyveSmartWateringZoneSensor,
     BHyveZoneHistorySensor,
 )
 
@@ -27,12 +28,15 @@ TEST_BATTERY_LEVEL_UPDATED = 50
 TEST_TEMPERATURE_FAHRENHEIT = 72.5
 
 
-def create_mock_coordinator(devices: dict) -> MagicMock:
+def create_mock_coordinator(devices: dict, programs: dict | None = None) -> MagicMock:
     """Create a mock coordinator with the given devices."""
+    if programs is None:
+        programs = {}
+
     coordinator = MagicMock(spec=BHyveDataUpdateCoordinator)
     coordinator.data = {
         "devices": devices,
-        "programs": {},
+        "programs": programs,
     }
     coordinator.last_update_success = True
     coordinator.async_set_updated_data = MagicMock()
@@ -132,6 +136,235 @@ def mock_zone_history_data() -> list:
             ]
         }
     ]
+
+
+@pytest.fixture
+def mock_smart_watering_landscapes_data() -> dict:
+    """Mock smart watering landscapes data."""
+    return {
+        "1": {
+            "station": 1,
+            "root_depth": 12,
+            "max_allowable_depletion": 0.35,
+            "pwp_depth": 2.16,
+            "permanent_wilting_point": 0.18,
+            "allowable_soil_acc": 0.26,
+            "field_capacity_depth": 3.84,
+            "replenishment_point": 3.252,
+            "plant_available_water": 1.6799999999999997,
+            "max_runtime": 0,
+            "drought_factor": 1,
+            "micro_climate": 0.9,
+            "plant_factor": 0.7,
+            "available_water": 0.14,
+            "current_water_level": 3.252,
+            "application_rate": 31.857641025641016,
+            "field_capacity": 0.32,
+            "updated_at": "2026-08-20T18:00:00.000Z",
+            "distribution_uniformity": 0.8766692851531815,
+            "rainfall_efficiency": 0.63,
+            "min_water_level": 3.252,
+            "id": "a",
+            "landscape_coeffcient": 0.63,
+            "infiltration_rate": 0.2,
+            "monthly_eto": [
+                1.48273003101,
+                1.90748000145,
+                2.62103009224,
+                3.96890997887,
+                4.96686983109,
+                6.26438999176,
+                6.55533981323,
+                5.66915988922,
+                4.48599004745,
+                3.33847999573,
+                1.92864000797,
+                1.44123995304,
+            ],
+            "efficiency": 0.1356191102586882,
+            "device_id": "test-device-123",
+            "readily_available_water": 0.5879999999999999,
+            "created_at": "2026-08-19T18:00:00.000Z",
+            "scheduling_multiplier": 1.0799117746861213,
+        },
+        "2": {
+            "station": 2,
+            "root_depth": 6,
+            "max_allowable_depletion": 0.35,
+            "pwp_depth": 1.62,
+            "permanent_wilting_point": 0.27,
+            "allowable_soil_acc": 0.16,
+            "field_capacity_depth": 2.58,
+            "replenishment_point": 2.244,
+            "plant_available_water": 0.96,
+            "max_runtime": 22,
+            "drought_factor": 1,
+            "micro_climate": 1,
+            "plant_factor": 0.8,
+            "available_water": 0.15999999999999998,
+            "application_rate": 0.5727296703296705,
+            "field_capacity": 0.43,
+            "updated_at": "2026-08-20T18:00:00.000Z",
+            "distribution_uniformity": 0.7668539325842697,
+            "rainfall_efficiency": 0.4,
+            "min_water_level": 2.244,
+            "id": "b",
+            "landscape_coefficient": 0.8,
+            "infiltration_rate": 0.15,
+            "monthly_eto": [
+                1.48273003101,
+                1.90748000145,
+                2.62103009224,
+                3.96890997887,
+                4.96686983109,
+                6.26438999176,
+                6.55533981323,
+                5.66915988922,
+                4.48599004745,
+                3.33847999573,
+                1.92864000797,
+                1.44123995304,
+            ],
+            "efficiency": 0.5845321186787661,
+            "device_id": "test-device-123",
+            "readily_available_water": 0.33599999999999997,
+            "created_at": "2026-08-19T18:00:00.000Z",
+            "scheduling_multiplier": 1.1626387981711301,
+        },
+    }
+
+
+@pytest.fixture
+def mock_smart_watering_programs_data() -> dict:
+    """Mock smart watering programs data."""
+    return {
+        "a": {
+            "name": "Manual",
+            "program_start_date": "2026-08-18T06:00:00.000Z",
+            "frequency": {"type": "days", "days": [1, 3, 6]},
+            "program_end_date": None,
+            "updated_at": "2026-08-19T010:00:00.000Z",
+            "updated_via": "wifi",
+            "start_times": ["05:30", "07:00"],
+            "id": "a",
+            "budget": 100,
+            "is_smart_program": False,
+            "device_id": "test-device-123",
+            "program": "a",
+            "run_times": [{"run_time": 30, "station": 1}],
+            "enabled": True,
+            "created_at": "2026-08-17T012:00:00.000Z",
+        },
+        "b": {
+            "post_delay": 0.0,
+            "lock_at": "2026-08-31T08:00:00.000Z",
+            "name": "Smart Watering",
+            "frequency": {"type": "days", "days": [1, 3, 6]},
+            "process_at": "2026-08-31T14:18:00.000Z",
+            "watering_plan": [
+                {
+                    "date": "2026-08-30T08:00:00.000Z",
+                    "start_times": [],
+                    "run_times": [],
+                    "zone_forecasts": [
+                        {
+                            "station": 2,
+                            "initial_water_level": 2.5034046142773994,
+                            "date": "2026-08-30T08:00:00.000Z",
+                            "eto": 0.19325470937656308,
+                            "mbo_raw": 0.25940461427739914,
+                            "net_irrigation": 0.0,
+                            "total_soak_runoff": 0,
+                            "total_direct_runoff": 0,
+                            "gross_irrigation": 0.0,
+                            "water_rule": "system_restricted",
+                            "rainfall": 0,
+                            "etc": 0.1546037675012505,
+                            "final_water_level": 2.348800846776149,
+                            "delta": -0.15460376750125038,
+                            "total_scheduling_losses": 0,
+                            "daily_surplus": 0,
+                            "device_id": "test-device-123",
+                            "soak_runoff": [],
+                            "mbf_raw": 0.10480084677614876,
+                            "effective_rainfall": 0.2,
+                            "effective_irrigation": 0.3,
+                            "direct_runoff": [],
+                        }
+                    ],
+                },
+                {
+                    "date": "2026-08-31T08:00:00.000Z",
+                    "start_times": ["02:00", "03:15", "04:30"],
+                    "run_times": [
+                        {"station": 2, "run_time": 75, "device_id": "test-device-123"}
+                    ],
+                    "zone_forecasts": [
+                        {
+                            "station": 2,
+                            "initial_water_level": 2.348800846776149,
+                            "date": "2026-08-31T08:00:00.000Z",
+                            "eto": 0.1556276452562946,
+                            "mbo_raw": 0.10480084677614876,
+                            "net_irrigation": 0.3347788876279935,
+                            "total_soak_runoff": 0,
+                            "total_direct_runoff": 0,
+                            "gross_irrigation": 0.5727296703296705,
+                            "water_rule": "as-needed",
+                            "rainfall": 0,
+                            "etc": 0.12450211620503569,
+                            "final_water_level": 2.559077618199107,
+                            "delta": 0.05567300392170749,
+                            "total_scheduling_losses": 0,
+                            "daily_surplus": 0,
+                            "device_id": "test-device-123",
+                            "soak_runoff": [0, 0],
+                            "mbf_raw": 0.3150776181991066,
+                            "effective_rainfall": 0.0,
+                            "effective_irrigation": 0.0,
+                            "direct_runoff": [0, 0, 0],
+                        }
+                    ],
+                },
+            ],
+            "long_term_program": {
+                "frequency": {
+                    "type": "interval",
+                    "intervals": [9, 7, 5, 4, 3, 3, 2, 3, 3, 4, 7, 10],
+                },
+                "run_times": [{"run_time": 75, "station": 2}],
+                "group_run_times": [
+                    {
+                        "device_id": "test-device-123",
+                        "run_times": [{"run_time": 75, "station": 2}],
+                    }
+                ],
+                "start_times": ["02:00", "03:45", "05:30"],
+                "budgets": [0, 0, 0, 90, 80, 100, 80, 90, 80, 80, 0, 0],
+                "pre_delay": 0,
+                "post_delay": 0.0,
+            },
+            "group_id": "1",
+            "updated_at": "2026-08-30T21:00:00.000Z",
+            "pre_delay": 0,
+            "updated_via": "wifi",
+            "start_times": ["02:00", "03:15", "04:30"],
+            "id": "b",
+            "budget": 100,
+            "group_run_times": [
+                {
+                    "device_id": "test-device-123",
+                    "run_times": [{"run_time": 75, "station": 2}],
+                }
+            ],
+            "is_smart_program": True,
+            "device_id": "test-device-123",
+            "program": "e",
+            "run_times": [{"run_time": 75, "station": 2}],
+            "enabled": True,
+            "created_at": "2026-08-29T21:00:00.000Z",
+        },
+    }
 
 
 @pytest.fixture
@@ -596,6 +829,118 @@ class TestBHyveZoneHistorySensor:
         assert attrs["run_time"] == 0.97
         assert attrs["consumption_gallons"] == 2
         assert attrs["consumption_litres"] == 7.57
+
+
+class TestBHyveSmartWateringZoneSensor:
+    """Test BHyveSmartWateringZoneSensor entity."""
+
+    async def test_smart_watering_zone_sensor_initialization(
+        self,
+        mock_sprinkler_device_with_battery: BHyveDevice,
+    ) -> None:
+        """Test smart watering zone sensor entity initialization."""
+        coordinator = create_mock_coordinator(
+            {
+                "test-device-123": {
+                    "device": mock_sprinkler_device_with_battery,
+                    "history": [],
+                    "landscapes": {},
+                }
+            }
+        )
+
+        zone = {"station": "1", "name": "Front Lawn"}
+
+        # Create description for the zone
+        description = SensorEntityDescription(
+            key="smart_watering_zone",
+            translation_key="smart_watering_zone",
+            icon="mdi:water-percent",
+            device_class=SensorDeviceClass.MOISTURE,
+            entity_category=EntityCategory.DIAGNOSTIC,
+        )
+
+        sensor = BHyveSmartWateringZoneSensor(
+            coordinator=coordinator,
+            device=mock_sprinkler_device_with_battery,
+            zone=zone,
+            zone_name="Front Lawn",
+            description=description,
+        )
+
+        # Test basic properties
+        assert sensor._attr_name == "Front Lawn smart watering"
+        assert sensor._attr_translation_placeholders == {"zone_name": "Front Lawn"}
+        assert sensor.device_class == SensorDeviceClass.MOISTURE
+        assert sensor.entity_description.entity_category == EntityCategory.DIAGNOSTIC
+
+    async def test_smart_watering_zone_sensor_attributes(
+        self,
+        mock_sprinkler_device_with_battery: BHyveDevice,
+        mock_smart_watering_landscapes_data: dict,
+        mock_smart_watering_programs_data: dict,
+    ) -> None:
+        """Test smart watering zone sensor with landscape and zone forecast data."""
+        coordinator = create_mock_coordinator(
+            {
+                "test-device-123": {
+                    "device": mock_sprinkler_device_with_battery,
+                    "history": [],
+                    "landscapes": mock_smart_watering_landscapes_data,
+                }
+            },
+            mock_smart_watering_programs_data,
+        )
+
+        zone = {"station": 2, "name": "Front Lawn"}
+
+        # Create description for the zone
+        description = SensorEntityDescription(
+            key="smart_watering_zone",
+            translation_key="smart_watering_zone",
+            icon="mdi:water-percent",
+            device_class=SensorDeviceClass.MOISTURE,
+            entity_category=EntityCategory.DIAGNOSTIC,
+        )
+
+        sensor = BHyveSmartWateringZoneSensor(
+            coordinator=coordinator,
+            device=mock_sprinkler_device_with_battery,
+            zone=zone,
+            zone_name="Front Lawn",
+            description=description,
+        )
+
+        # Test state (should be a numeric value for MOISTURE device class)
+        assert sensor.native_value is not None
+        assert sensor.native_value == 77.20375424922597
+
+        # Test attributes
+        attrs = sensor.extra_state_attributes
+        assert attrs["application_rate"] == 0.5727296703296705
+        assert attrs["efficiency"] == 0.5845321186787661
+        assert attrs["plant_factor"] == 0.8
+        assert attrs["micro_climate"] == 1
+        assert attrs["max_allowable_depletion"] == 0.35
+        assert attrs["field_capacity"] == 0.43
+        assert attrs["permanent_wilting_point"] == 0.27
+        assert attrs["root_depth"] == 6
+        assert attrs["allowable_soil_acc"] == 0.16
+        assert attrs["infiltration_rate"] == 0.15
+        assert attrs["rainfall_efficiency"] == 0.4
+        assert attrs["drought_factor"] == 1
+        assert attrs["available_water"] == 0.15999999999999998
+        assert attrs["field_capacity_depth"] == 2.58
+        assert attrs["pwp_depth"] == 1.62
+        assert attrs["plant_available_water"] == 0.96
+        assert attrs["readily_available_water"] == 0.33599999999999997
+        assert attrs["replenishment_point"] == 2.244
+        assert attrs["max_runtime"] == 22
+        assert attrs["landscape_coefficient"] == 0.8
+        assert attrs["etc"] == 0.1546037675012505
+        assert attrs["eto"] == 0.19325470937656308
+        assert attrs["standard_runtime"] == 60
+        assert attrs["current_moisture_balance"] == 2.5034046142773994
 
 
 class TestSensorWebsocketEvents:

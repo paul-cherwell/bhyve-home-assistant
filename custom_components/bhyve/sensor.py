@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
@@ -16,6 +17,7 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.helpers.icon import icon_for_battery_level
+from homeassistant.util import dt
 
 from . import BHyveCoordinatorEntity
 from .const import (
@@ -26,8 +28,6 @@ from .const import (
 from .util import orbit_time_to_local_time
 
 if TYPE_CHECKING:
-    from datetime import datetime
-
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -47,6 +47,38 @@ ATTR_RUN_TIME = "run_time"
 ATTR_NEXT_START_PROGRAMS = "programs"
 ATTR_START_TIME = "start_time"
 ATTR_STATUS = "status"
+
+# landscape attrs (editable)
+ATTR_APPLICATION_RATE = "application_rate"
+ATTR_EFFICIENCY = "efficiency"
+ATTR_PLANT_FACTOR = "plant_factor"
+ATTR_MICROCLIMATE_FACTOR = "micro_climate"
+ATTR_MGMT_ALLOWED_DEPLETION = "max_allowable_depletion"
+ATTR_FIELD_CAPACITY = "field_capacity"
+ATTR_PERMANENT_WILTING_POINT = "permanent_wilting_point"
+ATTR_ROOT_ZONE = "root_depth"
+ATTR_ALLOWABLE_SURFACE_ACCUMULATION = "allowable_soil_acc"
+ATTR_BASIC_INFILTRATION_RATE = "infiltration_rate"
+ATTR_EFFECTIVE_RAINFALL = "rainfall_efficiency"
+ATTR_DROUGHT_FACTOR = "drought_factor"
+
+# landscape attrs (computed)
+ATTR_AVAILABLE_WATER = "available_water"
+ATTR_FIELD_CAPACITY_DEPTH = "field_capacity_depth"
+ATTR_PERMANENT_WILTING_POINT_DEPTH = "pwp_depth"
+ATTR_PLANT_AVAILABLE_WATER = "plant_available_water"
+ATTR_READILY_AVAILABLE_WATER = "readily_available_water"
+ATTR_REFILL_POINT = "replenishment_point"
+ATTR_MAXIMUM_RUNTIME_BEFORE_RUNOFF = "max_runtime"
+ATTR_LANDSCAPE_COEFFICIENT = "landscape_coefficient"
+
+# program.watering_plan[0].zone_forecasts attrs
+ATTR_LANDSCAPE_EVAPOTRANSPIRATION = "etc"
+ATTR_REFERENCE_EVAPOTRANSPIRATION = "eto"
+
+# calculated attrs
+ATTR_STANDARD_RUNTIME = "standard_runtime"
+ATTR_CURRENT_MOISTURE_BALANCE = "current_moisture_balance"
 
 
 def _parse_battery_level(battery_data: dict) -> int:
@@ -214,7 +246,7 @@ async def async_setup_entry(
                 )
                 sensors.append(BHyveSensor(coordinator, device, description))
 
-            # Add zone history sensors
+            # Add zone history and smart watering soil sensors
             all_zones = device.get("zones", [])
             for zone in all_zones:
                 # if the zone doesn't have a name, set it to the device's name if
@@ -239,6 +271,23 @@ async def async_setup_entry(
                         ),
                     )
                 )
+                if zone["smart_watering_enabled"]:
+                    sensors.append(
+                        BHyveSmartWateringZoneSensor(
+                            coordinator,
+                            device,
+                            zone,
+                            zone_name,
+                            SensorEntityDescription(
+                                key="smart_watering_zone",
+                                translation_key="smart_watering_zone",
+                                icon="mdi:water-percent",
+                                device_class=SensorDeviceClass.MOISTURE,
+                                entity_category=EntityCategory.DIAGNOSTIC,
+                                native_unit_of_measurement=PERCENTAGE,
+                            ),
+                        )
+                    )
 
             # Add battery sensor if device has battery
             if device.get("battery", None) is not None:
@@ -443,3 +492,255 @@ class BHyveZoneHistorySensor(BHyveCoordinatorEntity, SensorEntity):
             .get(self._device_id, {})
             .get("history", [])
         )
+
+
+class BHyveSmartWateringZoneSensor(BHyveCoordinatorEntity, SensorEntity):
+    # see https://husqvarna-water.com/smart-watering-101/ for formulas
+    """Define a BHyve smart watering zone sensor."""
+
+    entity_description: SensorEntityDescription
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: BHyveDataUpdateCoordinator,
+        device: BHyveDevice,
+        zone: dict,
+        zone_name: str,
+        description: SensorEntityDescription,
+    ) -> None:
+        """Initialize the sensor."""
+        self.entity_description = description
+        if zone_name == device.get("name"):
+            self._attr_name = "Smart watering"
+        else:
+            self._attr_name = f"{zone_name} smart watering"
+        self._attr_translation_placeholders = {"zone_name": zone_name}
+        super().__init__(coordinator, device)
+
+        self._zone = zone
+        self._zone_id = zone.get("station")
+        self._attr_unique_id = (
+            f"{self._mac_address}:{self._device_id}:{self._zone_id}:smart_watering_zone"
+        )
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the state of the entity."""
+        landscape = self._get_landscape()
+        if not landscape:
+            return None
+        # B-hyve computed value for 0% moisture
+        landscape_moisture_level_0 = landscape["replenishment_point"]
+
+        # B-hyve computed value for 100% moisture
+        landscape_moisture_level_100 = landscape["field_capacity_depth"]
+
+        # B-hyve reported current moisture
+        landscape_moisture_level = self._get_current_moisture_balance()
+        if (
+            landscape_moisture_level_0 is None
+            or landscape_moisture_level_100 is None
+            or landscape_moisture_level is None
+        ):
+            return None
+
+        landscape_moisture_percentage = (
+            (landscape_moisture_level - landscape_moisture_level_0)
+            / (landscape_moisture_level_100 - landscape_moisture_level_0)
+        ) * 100
+
+        return max(0, min(100, round(landscape_moisture_percentage)))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the device state attributes."""
+        landscape = self._get_landscape()
+        if not landscape:
+            return {}
+
+        zone_forcast = self._get_zone_forecast()
+        if not zone_forcast:
+            return {}
+
+        return {
+            # editable
+            ATTR_APPLICATION_RATE: landscape.get(ATTR_APPLICATION_RATE),
+            ATTR_EFFICIENCY: landscape.get(ATTR_EFFICIENCY),
+            ATTR_PLANT_FACTOR: landscape.get(ATTR_PLANT_FACTOR),
+            ATTR_MICROCLIMATE_FACTOR: landscape.get(ATTR_MICROCLIMATE_FACTOR),
+            ATTR_MGMT_ALLOWED_DEPLETION: landscape.get(ATTR_MGMT_ALLOWED_DEPLETION),
+            ATTR_FIELD_CAPACITY: landscape.get(ATTR_FIELD_CAPACITY),
+            ATTR_PERMANENT_WILTING_POINT: landscape.get(ATTR_PERMANENT_WILTING_POINT),
+            ATTR_ROOT_ZONE: landscape.get(ATTR_ROOT_ZONE),
+            ATTR_ALLOWABLE_SURFACE_ACCUMULATION: landscape.get(
+                ATTR_ALLOWABLE_SURFACE_ACCUMULATION
+            ),
+            ATTR_BASIC_INFILTRATION_RATE: landscape.get(ATTR_BASIC_INFILTRATION_RATE),
+            ATTR_EFFECTIVE_RAINFALL: landscape.get(ATTR_EFFECTIVE_RAINFALL),
+            ATTR_DROUGHT_FACTOR: landscape.get(ATTR_DROUGHT_FACTOR),
+            # computed
+            ATTR_AVAILABLE_WATER: landscape.get(ATTR_AVAILABLE_WATER),
+            ATTR_FIELD_CAPACITY_DEPTH: landscape.get(ATTR_FIELD_CAPACITY_DEPTH),
+            ATTR_PERMANENT_WILTING_POINT_DEPTH: landscape.get(
+                ATTR_PERMANENT_WILTING_POINT_DEPTH
+            ),
+            ATTR_PLANT_AVAILABLE_WATER: landscape.get(ATTR_PLANT_AVAILABLE_WATER),
+            ATTR_READILY_AVAILABLE_WATER: landscape.get(ATTR_READILY_AVAILABLE_WATER),
+            ATTR_REFILL_POINT: landscape.get(ATTR_REFILL_POINT),
+            ATTR_STANDARD_RUNTIME: self._get_standard_runtime_minutes(),
+            ATTR_MAXIMUM_RUNTIME_BEFORE_RUNOFF: landscape.get(
+                ATTR_MAXIMUM_RUNTIME_BEFORE_RUNOFF
+            ),
+            ATTR_REFERENCE_EVAPOTRANSPIRATION: zone_forcast.get(
+                ATTR_REFERENCE_EVAPOTRANSPIRATION
+            ),
+            ATTR_LANDSCAPE_COEFFICIENT: landscape.get(ATTR_LANDSCAPE_COEFFICIENT),
+            ATTR_LANDSCAPE_EVAPOTRANSPIRATION: zone_forcast.get(
+                ATTR_LANDSCAPE_EVAPOTRANSPIRATION
+            ),
+            ATTR_CURRENT_MOISTURE_BALANCE: self._get_current_moisture_balance(),
+        }
+
+    def _get_standard_runtime_minutes(self) -> int | None:
+        """Calculate standard runtime based on values from the landscape."""
+        landscape = self._get_landscape()
+        if not landscape:
+            return None
+
+        readily_available_water = landscape.get(ATTR_READILY_AVAILABLE_WATER)
+        application_rate = landscape.get(ATTR_APPLICATION_RATE)
+        efficiency = landscape.get(ATTR_EFFICIENCY)
+
+        if (
+            readily_available_water is None
+            or application_rate is None
+            or efficiency is None
+        ):
+            return None
+
+        standard_runtime_hours = (
+            readily_available_water / application_rate
+        ) / efficiency
+
+        return round(standard_runtime_hours * 60)
+
+    def _get_current_moisture_balance(self) -> float | None:
+        """Calculate current moisture balance based on values from the zone forecast."""
+        zone_forcast = self._get_zone_forecast()
+        if not zone_forcast:
+            return None
+
+        landscape = self._get_landscape()
+        if not landscape:
+            return None
+
+        initial_moisture_balance = zone_forcast.get("initial_water_level")
+
+        reference_evapotranspiration = zone_forcast.get(
+            ATTR_REFERENCE_EVAPOTRANSPIRATION
+        )
+        landscape_coefficient = landscape.get(ATTR_LANDSCAPE_COEFFICIENT)
+        if reference_evapotranspiration is None or landscape_coefficient is None:
+            return None
+
+        landscape_evapotranspiration = (
+            reference_evapotranspiration * landscape_coefficient
+        )
+
+        effective_rainfall = zone_forcast.get("effective_rainfall")
+
+        effective_irrigation = zone_forcast.get("effective_irrigation")
+
+        if (
+            initial_moisture_balance is None
+            or landscape_evapotranspiration is None
+            or effective_rainfall is None
+            or effective_irrigation is None
+        ):
+            return None
+
+        local_tz = dt.get_default_time_zone()
+
+        now = datetime.now(local_tz)
+
+        nine_am = now.replace(hour=9, minute=0, second=0, microsecond=0)
+
+        nine_pm = now.replace(hour=21, minute=0, second=0, microsecond=0)
+
+        current_moisture_balance: float | None
+        if now < nine_am:
+            current_moisture_balance = initial_moisture_balance
+        elif now < nine_pm:
+            daylight_hours_elapsed = (now - nine_am).total_seconds() / 3600
+            total_daylight_hours = 12
+            evapotranspiration_loss = landscape_evapotranspiration * (
+                daylight_hours_elapsed / total_daylight_hours
+            )
+            current_moisture_balance = (
+                initial_moisture_balance
+                - evapotranspiration_loss
+                + effective_rainfall
+                + effective_irrigation
+            )
+        else:
+            current_moisture_balance = zone_forcast.get("final_water_level")
+
+        return current_moisture_balance
+
+    def _get_landscape(self) -> dict | None:
+        """Return the landscape entry for this zone."""
+        landscapes = self._get_device_landscapes()
+        return landscapes.get(str(self._zone_id))
+
+    def _get_device_landscapes(self) -> dict:
+        """Get landscapes from coordinator."""
+        return (
+            self.coordinator.data.get("devices", {})
+            .get(self._device_id, {})
+            .get("landscapes", [])
+        )
+
+    def _get_zone_forecast(self) -> dict | None:
+        """Return the current day's watering forecast for this zone."""
+        smart_program = self._get_smart_watering_program()
+        if not smart_program:
+            return {}
+
+        watering_plan = smart_program.get("watering_plan")
+        if not watering_plan:
+            return {}
+
+        current_day_forecasts = watering_plan[0].get("zone_forecasts")
+        if not current_day_forecasts:
+            return {}
+
+        zone_forecast: dict | None = None
+        for forecast in current_day_forecasts:
+            if forecast.get("station") == self._zone_id:
+                zone_forecast = forecast
+                break
+
+        return zone_forecast
+
+    def _get_smart_watering_program(self) -> dict | None:
+        """Get smart watering program for this device."""
+        smart_program: dict | None = None
+
+        for program in self._get_programs().values():
+            if not program.get("is_smart_program"):
+                continue
+
+            device_id = program.get("device_id")
+            if not device_id:
+                continue
+
+            if device_id == self._device_id:
+                smart_program = program
+                break
+
+        return smart_program
+
+    def _get_programs(self) -> dict:
+        """Get programs from coordinator."""
+        return self.coordinator.data.get("programs", {})
