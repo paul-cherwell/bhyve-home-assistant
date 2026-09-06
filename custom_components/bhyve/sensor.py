@@ -660,9 +660,7 @@ class BHyveSmartWateringZoneSensor(BHyveCoordinatorEntity, SensorEntity):
         ):
             return None
 
-        local_tz = dt.get_default_time_zone()
-
-        now = datetime.now(local_tz)
+        now = self._get_local_datetime()
 
         nine_am = now.replace(hour=9, minute=0, second=0, microsecond=0)
 
@@ -687,6 +685,11 @@ class BHyveSmartWateringZoneSensor(BHyveCoordinatorEntity, SensorEntity):
             current_moisture_balance = zone_forcast.get("final_water_level")
 
         return current_moisture_balance
+
+    def _get_local_datetime(self) -> datetime:
+        """Return current datetime in the local timezone."""
+        local_tz = dt.get_default_time_zone()
+        return datetime.now(local_tz)
 
     def _get_landscape(self) -> dict | None:
         """Return the landscape entry for this zone."""
