@@ -714,7 +714,17 @@ class BHyveSmartWateringZoneSensor(BHyveCoordinatorEntity, SensorEntity):
         if not watering_plan:
             return {}
 
-        current_day_forecasts = watering_plan[0].get("zone_forecasts")
+        current_date = self._get_local_datetime().date()
+        current_day_plan: dict | None = None
+        for daily_plan in watering_plan:
+            if datetime.fromisoformat(daily_plan["date"]).date() == current_date:
+                current_day_plan = daily_plan
+                break
+
+        if not current_day_plan:
+            return {}
+
+        current_day_forecasts = current_day_plan.get("zone_forecasts")
         if not current_day_forecasts:
             return {}
 

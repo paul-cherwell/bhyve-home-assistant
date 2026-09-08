@@ -264,6 +264,37 @@ def mock_smart_watering_programs_data() -> dict:
             "process_at": "2026-08-31T14:18:00.000Z",
             "watering_plan": [
                 {
+                    "date": "2026-08-29T08:00:00.000Z",
+                    "start_times": [],
+                    "run_times": [],
+                    "zone_forecasts": [
+                        {
+                            "station": 2,
+                            "initial_water_level": 3.5034046142773994,
+                            "date": "2026-08-29T08:00:00.000Z",
+                            "eto": 0.29325470937656308,
+                            "mbo_raw": 0.35940461427739914,
+                            "net_irrigation": 0.0,
+                            "total_soak_runoff": 0,
+                            "total_direct_runoff": 0,
+                            "gross_irrigation": 0.0,
+                            "water_rule": "system_restricted",
+                            "rainfall": 0,
+                            "etc": 0.2546037675012505,
+                            "final_water_level": 2.5034046142773994,
+                            "delta": -1,
+                            "total_scheduling_losses": 0,
+                            "daily_surplus": 0,
+                            "device_id": "test-device-123",
+                            "soak_runoff": [],
+                            "mbf_raw": 0.20480084677614876,
+                            "effective_rainfall": 0.0,
+                            "effective_irrigation": 0.0,
+                            "direct_runoff": [],
+                        }
+                    ],
+                },
+                {
                     "date": "2026-08-30T08:00:00.000Z",
                     "start_times": [],
                     "run_times": [],
@@ -917,7 +948,7 @@ class TestBHyveSmartWateringZoneSensor:
             BHyveSmartWateringZoneSensor, "_get_local_datetime"
         ) as mock_get_local_datetime:
             mock_get_local_datetime.return_value = datetime(
-                2026, 5, 20, 2, 00, tzinfo=timezone.utc
+                2026, 8, 30, 2, 00, tzinfo=timezone.utc
             )
             assert sensor.native_value is not None
             assert sensor.native_value == 77
@@ -931,7 +962,7 @@ class TestBHyveSmartWateringZoneSensor:
             BHyveSmartWateringZoneSensor, "_get_local_datetime"
         ) as mock_get_local_datetime:
             mock_get_local_datetime.return_value = datetime(
-                2026, 5, 20, 9, 00, tzinfo=timezone.utc
+                2026, 8, 30, 9, 00, tzinfo=timezone.utc
             )
             assert sensor.native_value is not None
             assert sensor.native_value == 100
@@ -945,7 +976,7 @@ class TestBHyveSmartWateringZoneSensor:
             BHyveSmartWateringZoneSensor, "_get_local_datetime"
         ) as mock_get_local_datetime:
             mock_get_local_datetime.return_value = datetime(
-                2026, 5, 20, 15, 00, tzinfo=timezone.utc
+                2026, 8, 30, 15, 00, tzinfo=timezone.utc
             )
             assert sensor.native_value is not None
             assert sensor.native_value == 100
@@ -958,7 +989,7 @@ class TestBHyveSmartWateringZoneSensor:
             BHyveSmartWateringZoneSensor, "_get_local_datetime"
         ) as mock_get_local_datetime:
             mock_get_local_datetime.return_value = datetime(
-                2026, 5, 20, 22, 00, tzinfo=timezone.utc
+                2026, 8, 30, 22, 00, tzinfo=timezone.utc
             )
             assert sensor.native_value is not None
             assert sensor.native_value == 31
@@ -967,31 +998,37 @@ class TestBHyveSmartWateringZoneSensor:
                 == 2.348800846776149
             )
 
-        # Test attributes
-        attrs = sensor.extra_state_attributes
-        assert attrs["application_rate"] == 0.5727296703296705
-        assert attrs["efficiency"] == 0.5845321186787661
-        assert attrs["plant_factor"] == 0.8
-        assert attrs["micro_climate"] == 1
-        assert attrs["max_allowable_depletion"] == 0.35
-        assert attrs["field_capacity"] == 0.43
-        assert attrs["permanent_wilting_point"] == 0.27
-        assert attrs["root_depth"] == 6
-        assert attrs["allowable_soil_acc"] == 0.16
-        assert attrs["infiltration_rate"] == 0.15
-        assert attrs["rainfall_efficiency"] == 0.4
-        assert attrs["drought_factor"] == 1
-        assert attrs["available_water"] == 0.15999999999999998
-        assert attrs["field_capacity_depth"] == 2.58
-        assert attrs["pwp_depth"] == 1.62
-        assert attrs["plant_available_water"] == 0.96
-        assert attrs["readily_available_water"] == 0.33599999999999997
-        assert attrs["replenishment_point"] == 2.244
-        assert attrs["max_runtime"] == 22
-        assert attrs["landscape_coefficient"] == 0.8
-        assert attrs["etc"] == 0.1546037675012505
-        assert attrs["eto"] == 0.19325470937656308
-        assert attrs["standard_runtime"] == 60
+        # Test fixed attributes
+        with patch.object(
+            BHyveSmartWateringZoneSensor, "_get_local_datetime"
+        ) as mock_get_local_datetime:
+            mock_get_local_datetime.return_value = datetime(
+                2026, 8, 30, 12, 00, tzinfo=timezone.utc
+            )
+            attrs = sensor.extra_state_attributes
+            assert attrs["application_rate"] == 0.5727296703296705
+            assert attrs["efficiency"] == 0.5845321186787661
+            assert attrs["plant_factor"] == 0.8
+            assert attrs["micro_climate"] == 1
+            assert attrs["max_allowable_depletion"] == 0.35
+            assert attrs["field_capacity"] == 0.43
+            assert attrs["permanent_wilting_point"] == 0.27
+            assert attrs["root_depth"] == 6
+            assert attrs["allowable_soil_acc"] == 0.16
+            assert attrs["infiltration_rate"] == 0.15
+            assert attrs["rainfall_efficiency"] == 0.4
+            assert attrs["drought_factor"] == 1
+            assert attrs["available_water"] == 0.15999999999999998
+            assert attrs["field_capacity_depth"] == 2.58
+            assert attrs["pwp_depth"] == 1.62
+            assert attrs["plant_available_water"] == 0.96
+            assert attrs["readily_available_water"] == 0.33599999999999997
+            assert attrs["replenishment_point"] == 2.244
+            assert attrs["max_runtime"] == 22
+            assert attrs["landscape_coefficient"] == 0.8
+            assert attrs["etc"] == 0.1546037675012505
+            assert attrs["eto"] == 0.19325470937656308
+            assert attrs["standard_runtime"] == 60
 
 
 class TestSensorWebsocketEvents:
