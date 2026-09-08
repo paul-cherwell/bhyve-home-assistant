@@ -943,7 +943,7 @@ class TestBHyveSmartWateringZoneSensor:
             description=description,
         )
 
-        # Test state based on initial water level
+        # Pre 9am - Test state based on initial water level plus rainfall and irrigation
         with patch.object(
             BHyveSmartWateringZoneSensor, "_get_local_datetime"
         ) as mock_get_local_datetime:
@@ -951,13 +951,13 @@ class TestBHyveSmartWateringZoneSensor:
                 2026, 8, 30, 2, 00, tzinfo=timezone.utc
             )
             assert sensor.native_value is not None
-            assert sensor.native_value == 77
+            assert sensor.native_value == 100
             assert (
                 sensor.extra_state_attributes["current_moisture_balance"]
-                == 2.5034046142773994
+                == 2.5034046142773994 + 0.2 + 0.3
             )
 
-        # Test state based on initial water level plus rainfall and irrigation
+        # 9am - Test state based on initial water level plus rainfall and irrigation minus 0% evapotranspiration
         with patch.object(
             BHyveSmartWateringZoneSensor, "_get_local_datetime"
         ) as mock_get_local_datetime:
@@ -971,7 +971,7 @@ class TestBHyveSmartWateringZoneSensor:
                 == 2.5034046142773994 + 0.2 + 0.3
             )
 
-        # Test state based on initial water level plus rainfall and irrigation minus one half evapotranspiration
+        # 3pm - Test state based on initial water level plus rainfall and irrigation minus 50% evapotranspiration
         with patch.object(
             BHyveSmartWateringZoneSensor, "_get_local_datetime"
         ) as mock_get_local_datetime:
@@ -984,7 +984,21 @@ class TestBHyveSmartWateringZoneSensor:
                 "current_moisture_balance"
             ] == 2.5034046142773994 + 0.2 + 0.3 - (0.19325470937656308 * 0.8 * 0.5)
 
-        # Test state based on final water level
+        # 9 pm - Test state based on final water level
+        with patch.object(
+            BHyveSmartWateringZoneSensor, "_get_local_datetime"
+        ) as mock_get_local_datetime:
+            mock_get_local_datetime.return_value = datetime(
+                2026, 8, 30, 22, 00, tzinfo=timezone.utc
+            )
+            assert sensor.native_value is not None
+            assert sensor.native_value == 31
+            assert (
+                sensor.extra_state_attributes["current_moisture_balance"]
+                == 2.348800846776149
+            )
+
+        # Post 9pm - Test state based on final water level
         with patch.object(
             BHyveSmartWateringZoneSensor, "_get_local_datetime"
         ) as mock_get_local_datetime:

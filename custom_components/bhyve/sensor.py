@@ -668,7 +668,9 @@ class BHyveSmartWateringZoneSensor(BHyveCoordinatorEntity, SensorEntity):
 
         current_moisture_balance: float | None
         if now < nine_am:
-            current_moisture_balance = initial_moisture_balance
+            current_moisture_balance = (
+                initial_moisture_balance + effective_rainfall + effective_irrigation
+            )
         elif now < nine_pm:
             daylight_hours_elapsed = (now - nine_am).total_seconds() / 3600
             total_daylight_hours = 12
